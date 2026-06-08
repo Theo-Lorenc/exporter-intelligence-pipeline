@@ -1,3 +1,7 @@
+## Quick Start
+
+➡ Run `run_pipeline.bat` and open `exporters_master.xlsx`
+
 # Exporter Intelligence Pipeline
 
 ## Overview
