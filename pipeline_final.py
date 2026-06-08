@@ -575,6 +575,76 @@ def collect_listings(max_pages=MAX_PAGES):
 # --------------------------------------------------
 # SCRAPING PROFILES
 # --------------------------------------------------
+def safe_get(url, timeout=20):
+    try:
+        response = requests.get(
+            url,
+            headers={"user-agent": HEADERS["user-agent"]},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response
+    except Exception:
+        return None
+
+
+def extract_website_from_details(details, page_text=""):
+    # First try structured fields
+    for k, v in details.items():
+        key = clean_text(k).lower()
+        val = clean_text(v)
+
+        if "website" in key and val:
+            if not val.startswith(("http://", "https://")):
+                val = "https://" + val
+            return val
+
+    # Fallback: look in page text
+    m = re.search(r"(https?://\S+|www\.\S+)", page_text, flags=re.IGNORECASE)
+    if m:
+        website = clean_text(m.group(1))
+        if not website.startswith(("http://", "https://")):
+            website = "https://" + website
+        return website
+
+    return ""
+
+
+def extract_emails_from_website(url):
+    if not url:
+        return []
+
+    emails = []
+
+    resp = safe_get(url)
+    if not resp:
+        return []
+
+    html_text = resp.text
+    emails.extend(EMAIL_PATTERN.findall(html_text))
+
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    # Look for obvious contact page links
+    contact_links = []
+    for a in soup.select("a[href]"):
+        href = clean_text(a.get("href", ""))
+        text = clean_text(a.get_text(" ", strip=True)).lower()
+
+        if not href:
+            continue
+
+        href_lower = href.lower()
+        if "contact" in href_lower or "contact" in text:
+            contact_links.append(urljoin(url, href))
+
+    # Check a small number of contact pages only
+    for link in unique_nonblank(contact_links)[:2]:
+        resp2 = safe_get(link)
+        if resp2:
+            emails.extend(EMAIL_PATTERN.findall(resp2.text))
+
+    return unique_nonblank(emails)
 
 def parse_profile_page(html_text):
     soup = BeautifulSoup(html_text, "html.parser")
@@ -588,15 +658,37 @@ def parse_profile_page(html_text):
                 return strip_boilerplate(el["content"])
         return ""
 
-    href_contacts = [a.get("href", "") for a in soup.select('a[href^="mailto:"], a[href^="tel:"]')]
-    href_emails = [x.replace("mailto:", "").strip() for x in href_contacts if x.startswith("mailto:")]
-    href_phones = [x.replace("tel:", "").strip() for x in href_contacts if x.startswith("tel:")]
+    # ------------------------------------------
+    # CONTACTS FROM PROFILE PAGE
+    # ------------------------------------------
+
+    href_contacts = [
+        a.get("href", "")
+        for a in soup.select('a[href^="mailto:"], a[href^="tel:"]')
+    ]
+    href_emails = [
+        x.replace("mailto:", "").strip()
+        for x in href_contacts
+        if x.startswith("mailto:")
+    ]
+    href_phones = [
+        x.replace("tel:", "").strip()
+        for x in href_contacts
+        if x.startswith("tel:")
+    ]
 
     regex_emails = EMAIL_PATTERN.findall(page_text)
     regex_phones = PHONE_PATTERN.findall(page_text)
 
     emails = unique_nonblank(href_emails + regex_emails)
-    phones = filter_phone_candidates(href_phones + regex_phones, surrounding_text=page_text)
+    phones = filter_phone_candidates(
+        href_phones + regex_phones,
+        surrounding_text=page_text
+    )
+
+    # ------------------------------------------
+    # STRUCTURED DETAILS
+    # ------------------------------------------
 
     details = {}
 
@@ -616,28 +708,41 @@ def parse_profile_page(html_text):
             if k and v and k not in details:
                 details[k] = v
 
+    # ------------------------------------------
+    # WEBSITE EXTRACTION
+    # ------------------------------------------
+
+    website = extract_website_from_details(details, page_text)
+
+    # ------------------------------------------
     # EXTRA EMAIL EXTRACTION
+    # ------------------------------------------
+
+    # from structured fields
     for v in details.values():
         emails.extend(EMAIL_PATTERN.findall(v))
 
+    # from raw HTML
     emails.extend(EMAIL_PATTERN.findall(html_text))
-    emails = unique_nonblank(emails)
 
-    for row in soup.select("table tr"):
-        cells = row.find_all(["th", "td"])
-        if len(cells) == 2:
-            k = clean_text(cells[0].get_text(" ", strip=True))
-            v = strip_boilerplate(cells[1].get_text(" ", strip=True))
-            if k and v and k not in details:
-                details[k] = v
+    # from company website / contact page(s)
+    website_emails = extract_emails_from_website(website)
+    emails.extend(website_emails)
+
+    # final dedupe
+    emails = unique_nonblank(emails)
 
     details_json = json.dumps(details, ensure_ascii=False) if details else ""
 
     return {
         "page_title": strip_boilerplate(soup.title.get_text(strip=True) if soup.title else ""),
-        "page_heading": strip_boilerplate(soup.select_one("h1").get_text(" ", strip=True) if soup.select_one("h1") else ""),
+        "page_heading": strip_boilerplate(
+            soup.select_one("h1").get_text(" ", strip=True)
+            if soup.select_one("h1") else ""
+        ),
         "meta_description": find_meta(["description", "og:description"]),
         "meta_title": find_meta(["og:title"]),
+        "website": website,
         "emails": "; ".join(emails),
         "phones": "; ".join(phones),
         "details_json": details_json,
