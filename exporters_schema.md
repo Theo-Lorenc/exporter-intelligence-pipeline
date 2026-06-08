@@ -1,6 +1,6 @@
 # Exporters Database Schema
 
-Generated: 2026-06-08T14:41:07+00:00
+Generated: 2026-06-08T15:30:16+00:00
 
 ## Overview
 This project stores exporter listings, contacts, certifications, accreditations, products, and reporting views in exporters_final.db.
