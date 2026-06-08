@@ -27,6 +27,10 @@ This tool provides a quick way to:
 
 ## Outputs
 
+### Example Output
+
+![Company Profile Screenshot](screenshot_company_profile.png)
+
 ### 1. Excel Workbook
 `exporters_master.xlsx`
 
