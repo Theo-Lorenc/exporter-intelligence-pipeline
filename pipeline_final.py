@@ -575,17 +575,38 @@ def collect_listings(max_pages=MAX_PAGES):
 # --------------------------------------------------
 # SCRAPING PROFILES
 # --------------------------------------------------
-def safe_get(url, timeout=20):
-    try:
-        response = requests.get(
-            url,
-            headers={"user-agent": HEADERS["user-agent"]},
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        return response
-    except Exception:
-        return None
+def safe_get(url, timeout=20, retries=2):
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(
+                url,
+                headers={
+                    "user-agent": HEADERS["user-agent"],
+                    "accept-language": "en-GB,en;q=0.9",
+                },
+                timeout=timeout,
+            )
+
+            # Only accept successful responses
+            if response.status_code == 200:
+                return response
+
+            # Retry on server errors
+            if response.status_code >= 500:
+                continue
+
+            # For other statuses (404, 403 etc.) stop early
+            return None
+
+        except Exception as e:
+            if attempt == retries:
+                # optional: debug visibility
+                print(f"[safe_get] failed: {url} ({e})")
+
+        # small delay between attempts
+        time.sleep(random.uniform(1, 2))
+
+    return None
 
 
 def extract_website_from_details(details, page_text=""):
