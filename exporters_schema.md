@@ -1,12 +1,12 @@
 # Exporters Database Schema
 
-Generated: 2026-06-08T15:30:16+00:00
+Generated: 2026-06-08T20:14:47+00:00
 
 ## Overview
-This project stores exporter listings, contacts, certifications, accreditations, products, and reporting views in exporters_final.db.
+This project stores exporter listings, contacts, certifications, accreditations, products, countries served, and reporting views in exporters_final.db.
 
 ## Main Reporting Views
-- **v_company_profile**: one row per company with certifications and accreditations rolled up.
+- **v_company_profile**: one row per company with certifications, accreditations, and countries served rolled up.
 - **v_company_products**: one row per company with product family and product variant rollups.
 - **v_product_hierarchy**: product family hierarchy reference.
 
@@ -14,6 +14,7 @@ This project stores exporter listings, contacts, certifications, accreditations,
 - Product matching is keyword based, not ML-based.
 - Contacts are extracted from visible text and links, so some false positives/negatives can still occur.
 - Some exporter pages contain repeated site boilerplate which is filtered on a best-effort basis.
+- Countries serviced are extracted only when surfaced in the public profile content.
 
 ## Index: idx_companies_exporter_type
 
@@ -37,6 +38,12 @@ CREATE INDEX idx_companies_state ON companies(state);
 
 ```sql
 CREATE INDEX idx_company_products_company ON company_products(company_id);
+```
+
+## Index: idx_contacts_company
+
+```sql
+CREATE INDEX idx_contacts_company ON contacts(company_id);
 ```
 
 ## Table: accreditations
@@ -68,7 +75,7 @@ CREATE TABLE certifications (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNI
 Master exporter/company records.
 
 ```sql
-CREATE TABLE companies (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT, description TEXT, profile_url TEXT UNIQUE, image_url TEXT,exporter_type TEXT, licence_number TEXT, establishment_numbers TEXT,website TEXT, address TEXT, abn TEXT, state TEXT, postcode TEXT,page_title TEXT, page_heading TEXT, meta_description TEXT, meta_title TEXT,page_text_excerpt TEXT, details_json TEXT, profile_error TEXT);
+CREATE TABLE companies (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT, description TEXT, profile_url TEXT UNIQUE, image_url TEXT,exporter_type TEXT, licence_number TEXT, establishment_numbers TEXT,website TEXT, address TEXT, abn TEXT, state TEXT, postcode TEXT,countries_served TEXT,page_title TEXT, page_heading TEXT, meta_description TEXT, meta_title TEXT,page_text_excerpt TEXT, details_json TEXT, profile_error TEXT);
 ```
 
 ## Table: company_accreditations
@@ -100,7 +107,7 @@ CREATE TABLE company_products (company_id INTEGER, product_id INTEGER, match_sou
 Extracted contact details by company.
 
 ```sql
-CREATE TABLE contacts (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER, email TEXT, phone TEXT, contact_source TEXT,FOREIGN KEY(company_id) REFERENCES companies(id));
+CREATE TABLE contacts (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER, email TEXT, phone TEXT, contact_source TEXT,UNIQUE(company_id, email, phone, contact_source),FOREIGN KEY(company_id) REFERENCES companies(id));
 ```
 
 ## Table: product_families
@@ -140,7 +147,7 @@ CREATE TABLE products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, f
 Company-product reporting view.
 
 ```sql
-CREATE VIEW v_company_products AS SELECT c.id, c.name, c.exporter_type, c.website, c.state, c.profile_url, GROUP_CONCAT(DISTINCT pf.name) AS product_families, GROUP_CONCAT(DISTINCT CASE WHEN p.hierarchy_level = 2 THEN p.name END) AS product_variants FROM companies c LEFT JOIN company_products cp ON c.id = cp.company_id LEFT JOIN products p ON cp.product_id = p.id LEFT JOIN product_families pf ON p.family_id = pf.id GROUP BY c.id;
+CREATE VIEW v_company_products AS SELECT c.id, c.name, c.exporter_type, c.website, c.state, c.countries_served, c.profile_url, GROUP_CONCAT(DISTINCT pf.name) AS product_families, GROUP_CONCAT(DISTINCT CASE WHEN p.hierarchy_level = 2 THEN p.name END) AS product_variants FROM companies c LEFT JOIN company_products cp ON c.id = cp.company_id LEFT JOIN products p ON cp.product_id = p.id LEFT JOIN product_families pf ON p.family_id = pf.id GROUP BY c.id;
 ```
 
 ## View: v_company_profile
@@ -148,7 +155,7 @@ CREATE VIEW v_company_products AS SELECT c.id, c.name, c.exporter_type, c.websit
 Profile reporting view.
 
 ```sql
-CREATE VIEW v_company_profile AS SELECT c.id, c.name, c.exporter_type, c.website, c.address, c.state, c.postcode, c.profile_url, GROUP_CONCAT(DISTINCT cert.name) AS certifications, GROUP_CONCAT(DISTINCT acc.name) AS accreditations FROM companies c LEFT JOIN company_certifications cc ON c.id = cc.company_id LEFT JOIN certifications cert ON cc.certification_id = cert.id LEFT JOIN company_accreditations ca ON c.id = ca.company_id LEFT JOIN accreditations acc ON ca.accreditation_id = acc.id GROUP BY c.id;
+CREATE VIEW v_company_profile AS SELECT c.id, c.name, c.exporter_type, c.website, c.address, c.state, c.postcode, c.countries_served, c.profile_url, GROUP_CONCAT(DISTINCT cert.name) AS certifications, GROUP_CONCAT(DISTINCT acc.name) AS accreditations FROM companies c LEFT JOIN company_certifications cc ON c.id = cc.company_id LEFT JOIN certifications cert ON cc.certification_id = cert.id LEFT JOIN company_accreditations ca ON c.id = ca.company_id LEFT JOIN accreditations acc ON ca.accreditation_id = acc.id GROUP BY c.id;
 ```
 
 ## View: v_product_hierarchy
