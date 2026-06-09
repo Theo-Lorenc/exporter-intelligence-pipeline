@@ -4,9 +4,9 @@ BASE_URL = "https://www.aussiemeattradehub.com.au"
 LIST_URL = BASE_URL + "/RMED/search/GetListingByPagination"
 SEARCH_PAGE_URL = BASE_URL + "/rmed/search"
 
-DB_FILE = "exporters_final.db"
-EXCEL_FILE = "exporters_master.xlsx"
-SCHEMA_SQL_FILE = "exporters_final_schema.sql"
+DB_FILE = "exporters.db"
+EXCEL_FILE = "exporters.xlsx"
+SCHEMA_SQL_FILE = "exporters_schema.sql"
 SCHEMA_MD_FILE = "exporters_schema.md"
 RUN_BAT_FILE = "run_pipeline.bat"
 

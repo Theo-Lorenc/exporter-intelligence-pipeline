@@ -191,5 +191,4 @@ Thumbs.db
 
 # pipeline logs
 *.log
-exporters_final.db
-exporters_master.xlsx
+data/
