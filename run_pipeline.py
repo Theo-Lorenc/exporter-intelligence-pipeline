@@ -20,90 +20,15 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule
 
+from config.settings import *
+from scraper.listings import collect_listings
+from processing.utils import clean_text
+from scraper.website import *
+from scraper.profiles import enrich_rows
+
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
-
-BASE_URL = "https://www.aussiemeattradehub.com.au"
-LIST_URL = BASE_URL + "/RMED/search/GetListingByPagination"
-SEARCH_PAGE_URL = BASE_URL + "/rmed/search"
-
-DB_FILE = "exporters_final.db"
-EXCEL_FILE = "exporters_master.xlsx"
-SCHEMA_SQL_FILE = "exporters_final_schema.sql"
-SCHEMA_MD_FILE = "exporters_schema.md"
-RUN_BAT_FILE = "run_pipeline.bat"
-
-MAX_PAGES = 100
-REQUEST_DELAY_SECONDS = 0.25
-REQUEST_TIMEOUT = 60
-MAX_WORKERS = 8
-
-HEADERS = {
-    "accept": "application/json, text/javascript, */*; q=0.01",
-    "content-type": "application/json; charset=UTF-8",
-    "origin": BASE_URL,
-    "referer": SEARCH_PAGE_URL,
-    "x-requested-with": "XMLHttpRequest",
-    "user-agent": "Mozilla/5.0",
-}
-
-SEARCH_PAYLOAD = {
-    "search": {
-        "SearchTerm": "",
-        "SearchCategory": "All",
-    }
-}
-
-FIELD_WEIGHTS = {
-    "description": 1.00,
-    "page_heading": 0.90,
-    "meta_description": 0.70,
-    "details_json": 0.60,
-    "page_text_excerpt": 0.50,
-}
-
-KNOWN_CERTIFICATIONS = [
-    "Certified Pasturefed",
-    "Grainfed",
-    "Halal",
-    "MSA",
-    "Organic",
-    "Other 3rd Party Audited Verified",
-]
-
-KNOWN_ACCREDITATIONS = [
-    "China",
-    "EU",
-    "Malaysia",
-    "Egypt",
-    "Indonesia",
-    "Russia",
-]
-
-# Business-plan aligned settings
-TARGET_COUNTRY = "Singapore"
-COUNTRY_FIELD_KEYWORDS = [
-    "countries",
-    "country",
-    "serviced",
-    "services",
-    "markets",
-    "market",
-    "countries serviced",
-]
-PREMIUM_PRODUCT_KEYWORDS = [
-    "wagyu",
-    "grainfed",
-    "grain-fed",
-    "msa",
-    "premium beef",
-]
-SINGAPORE_FOCUS_PRODUCTS = [
-    "beef",
-    "grainfed beef",
-    "wagyu beef",
-]
 
 PRODUCT_HIERARCHY = {
     "Beef": {
@@ -146,57 +71,15 @@ PRODUCT_HIERARCHY = {
     },
 }
 
-BOILERPLATE_PATTERNS = [
-    r"ListingDetails",
-    r"Exporters Database",
-    r"Brand(?:,| &| &amp;) Licensing(?: & Assets| &amp; Assets)?",
-    r"About the brand",
-    r"Licensing program",
-    r"Manage my licence",
-    r"Assets",
-    r"Global Insights",
-    r"Trade Shows",
-    r"Welcome,?",
-    r"Report Centre",
-    r"Login",
-    r"Signup",
-    r"Error Enquiry unable to send\.? Please try after sometime",
-    r"Ok Processing This enquiry is being sent to the exporter - please wait",
-    r"Successful Your enquiry was successfully(?: sent)?",
-    r"×",
-]
-
 ABN_NEARBY_PATTERN = re.compile(r"\bABN\b", re.IGNORECASE)
-EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-PHONE_PATTERN = re.compile(r"(?:\+?\d[\d\s\-()]{7,}\d)")
 YEAR_RANGE_PATTERN = re.compile(r"^\d{4}\s*[-–]\s*\d{4}$")
 BARE_DOMAIN_PATTERN = re.compile(
     r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:/[^\s]*)?\b"
 )
 
-SESSION = requests.Session()
-SESSION.headers.update({
-    "user-agent": HEADERS["user-agent"],
-    "accept-language": "en-GB,en;q=0.9",
-})
-
 # --------------------------------------------------
 # GENERAL HELPERS
 # --------------------------------------------------
-
-def clean_text(value):
-    if value is None:
-        return ""
-    return re.sub(r"\s+", " ", str(value)).strip()
-
-
-def strip_boilerplate(text):
-    text = clean_text(text)
-    for pattern in BOILERPLATE_PATTERNS:
-        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
 
 def extract_between(text, start_label, end_labels):
     text = clean_text(text)
@@ -229,17 +112,6 @@ def flatten_hierarchy_to_product_map():
     for family, products in PRODUCT_HIERARCHY.items():
         for product_name, keywords in products.items():
             out[product_name] = {"family": family, "keywords": keywords}
-    return out
-
-
-def unique_nonblank(values):
-    seen = set()
-    out = []
-    for value in values:
-        value = clean_text(value)
-        if value and value not in seen:
-            out.append(value)
-            seen.add(value)
     return out
 
 
@@ -653,306 +525,8 @@ def safe_write_excel(path, sheets):
         return fallback_path, True
 
 # --------------------------------------------------
-# SCRAPING LISTINGS
-# --------------------------------------------------
-
-def fetch_list_page(page_number):
-    payload = dict(SEARCH_PAYLOAD)
-    payload["PageNumber"] = page_number
-
-    response = SESSION.post(LIST_URL, headers=HEADERS, json=payload, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-
-    try:
-        data = response.json()
-    except ValueError:
-        data = response.text
-
-    if isinstance(data, dict):
-        html_snippet = data.get("Html") or data.get("html") or ""
-    elif isinstance(data, str):
-        html_snippet = data
-    else:
-        html_snippet = ""
-
-    return html.unescape(html_snippet)
-
-
-def parse_listing_html(html_snippet):
-    soup = BeautifulSoup(html_snippet, "html.parser")
-    rows = []
-
-    for c in soup.select("div.company_list"):
-        header_link = c.select_one("div.company_list_header a")
-        desc_tag = c.select_one("div.company_list_body p")
-        img_tag = c.select_one("img")
-
-        rows.append({
-            "company_name": header_link.get_text(strip=True) if header_link else "",
-            "description": strip_boilerplate(desc_tag.get_text(" ", strip=True) if desc_tag else ""),
-            "profile_url": urljoin(BASE_URL, header_link["href"]) if header_link and header_link.has_attr("href") else "",
-            "image_url": urljoin(BASE_URL, img_tag["src"]) if img_tag and img_tag.has_attr("src") else "",
-        })
-
-    return rows
-
-
-def collect_listings(max_pages=MAX_PAGES):
-    all_rows = []
-
-    for page in range(1, max_pages + 1):
-        rows = parse_listing_html(fetch_list_page(page))
-        print(f"Page {page}: {len(rows)}")
-
-        if not rows:
-            break
-
-        all_rows.extend(rows)
-        time.sleep(REQUEST_DELAY_SECONDS)
-
-    return all_rows
-
-# --------------------------------------------------
 # SCRAPING PROFILES / WEBSITES
 # --------------------------------------------------
-
-def safe_get(url, timeout=20, retries=2):
-    if not url:
-        return None
-
-    url = clean_text(url).rstrip(".,);")
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
-
-    for _ in range(retries + 1):
-        try:
-            response = SESSION.get(url, timeout=timeout, allow_redirects=True)
-            if response.status_code == 200:
-                return response
-            if response.status_code in {403, 404}:
-                return None
-        except Exception:
-            pass
-        time.sleep(random.uniform(1, 2))
-
-    return None
-
-
-def normalize_website_url(url):
-    url = clean_text(url).rstrip(".,);")
-    if not url:
-        return ""
-    if url.startswith("mailto:") or url.startswith("tel:"):
-        return ""
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
-    try:
-        parsed = urlparse(url)
-        if not parsed.netloc:
-            return ""
-    except Exception:
-        return ""
-    return url
-
-
-def extract_website_from_details(details, page_text=""):
-    # 1) explicit website-like fields
-    for k, v in details.items():
-        key = clean_text(k).lower()
-        val = clean_text(v)
-        if val and ("website" in key or key == "web"):
-            normalized = normalize_website_url(val)
-            if normalized:
-                return normalized
-
-    # 2) explicit URLs in page text
-    match = re.search(r"(https?://\S+|www\.\S+)", page_text, flags=re.IGNORECASE)
-    if match:
-        normalized = normalize_website_url(match.group(1))
-        if normalized:
-            return normalized
-
-    # 3) bare-domain fallback
-    match = BARE_DOMAIN_PATTERN.search(page_text)
-    if match:
-        candidate = match.group(0)
-        if "@" not in candidate and not candidate.lower().endswith(
-            (".jpg", ".jpeg", ".png", ".gif", ".pdf", ".svg", ".webp")
-        ):
-            normalized = normalize_website_url(candidate)
-            if normalized:
-                return normalized
-
-    return ""
-
-
-def extract_emails_from_website(url):
-    if not url:
-        return []
-
-    emails = []
-
-    resp = safe_get(url)
-    if not resp:
-        return []
-
-    html_text = resp.text
-    emails.extend(EMAIL_PATTERN.findall(html_text))
-
-    soup = BeautifulSoup(html_text, "html.parser")
-    keywords = ["contact", "about", "team", "company"]
-    links = []
-
-    for a in soup.select("a[href]"):
-        href = clean_text(a.get("href", ""))
-        text = clean_text(a.get_text(" ", strip=True)).lower()
-        if not href:
-            continue
-        href_lower = href.lower()
-        if any(k in href_lower for k in keywords) or any(k in text for k in keywords):
-            links.append(urljoin(url, href))
-
-    for link in unique_nonblank(links)[:3]:
-        resp2 = safe_get(link)
-        if resp2:
-            emails.extend(EMAIL_PATTERN.findall(resp2.text))
-
-    return unique_nonblank(emails)
-
-
-def parse_profile_page(html_text):
-    soup = BeautifulSoup(html_text, "html.parser")
-    page_text_raw = soup.get_text(" ", strip=True)
-    page_text = strip_boilerplate(page_text_raw)
-
-    def find_meta(names):
-        for name in names:
-            el = soup.select_one(f'meta[property="{name}"]') or soup.select_one(f'meta[name="{name}"]')
-            if el and el.has_attr("content"):
-                return strip_boilerplate(el["content"])
-        return ""
-
-    href_contacts = [
-        a.get("href", "")
-        for a in soup.select('a[href^="mailto:"], a[href^="tel:"]')
-    ]
-    href_emails = [
-        x.replace("mailto:", "").strip()
-        for x in href_contacts
-        if x.startswith("mailto:")
-    ]
-    href_phones = [
-        x.replace("tel:", "").strip()
-        for x in href_contacts
-        if x.startswith("tel:")
-    ]
-
-    regex_emails = EMAIL_PATTERN.findall(page_text)
-    regex_phones = PHONE_PATTERN.findall(page_text)
-
-    emails = unique_nonblank(href_emails + regex_emails)
-    phones = filter_phone_candidates(
-        href_phones + regex_phones,
-        surrounding_text=page_text
-    )
-
-    details = {}
-
-    for dt in soup.select("dt"):
-        dd = dt.find_next_sibling("dd")
-        if dd:
-            k = clean_text(dt.get_text(" ", strip=True))
-            v = strip_boilerplate(dd.get_text(" ", strip=True))
-            if k and v:
-                details[k] = v
-
-    for row in soup.select("table tr"):
-        cells = row.find_all(["th", "td"])
-        if len(cells) == 2:
-            k = clean_text(cells[0].get_text(" ", strip=True))
-            v = strip_boilerplate(cells[1].get_text(" ", strip=True))
-            if k and v and k not in details:
-                details[k] = v
-
-    website = extract_website_from_details(details, page_text)
-    countries_served = extract_countries_from_details(details)
-
-    # extra emails from structured fields / raw HTML
-    for v in details.values():
-        emails.extend(EMAIL_PATTERN.findall(v))
-
-    emails.extend(EMAIL_PATTERN.findall(html_text))
-
-    # company website enrichment
-    website_emails = extract_emails_from_website(website)
-    emails.extend(website_emails)
-
-    emails = unique_nonblank(emails)
-
-    details_json = json.dumps(details, ensure_ascii=False) if details else ""
-
-    return {
-        "page_title": strip_boilerplate(soup.title.get_text(strip=True) if soup.title else ""),
-        "page_heading": strip_boilerplate(
-            soup.select_one("h1").get_text(" ", strip=True)
-            if soup.select_one("h1") else ""
-        ),
-        "meta_description": find_meta(["description", "og:description"]),
-        "meta_title": find_meta(["og:title"]),
-        "website": website,
-        "countries_served": countries_served,
-        "emails": "; ".join(emails),
-        "phones": "; ".join(phones),
-        "details_json": details_json,
-        "page_text_excerpt": page_text[:4000],
-    }
-
-
-def fetch_profile_details(profile_url):
-    if not profile_url:
-        return {}
-
-    response = safe_get(profile_url, timeout=REQUEST_TIMEOUT, retries=2)
-    if not response:
-        return {"profile_error": f"Failed to fetch profile: {profile_url}"}
-
-    return parse_profile_page(response.text)
-
-
-def enrich_one_row(row):
-    profile_url = row.get("profile_url", "")
-    try:
-        details = fetch_profile_details(profile_url) if profile_url else {}
-    except Exception as e:
-        details = {"profile_error": str(e)}
-
-    merged = dict(row)
-    merged.update(details)
-    return merged
-
-
-def enrich_rows(rows):
-    enriched = []
-    total = len(rows)
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(enrich_one_row, row) for row in rows]
-
-        completed = 0
-        for future in as_completed(futures):
-            completed += 1
-            print(f"Profile {completed}/{total}")
-            enriched.append(future.result())
-
-    enriched = sorted(
-        enriched,
-        key=lambda r: (
-            clean_text(r.get("company_name", "")),
-            clean_text(r.get("profile_url", "")),
-        ),
-    )
-    return enriched
-
 
 def clean_dataframe(df):
     for col in df.columns:
