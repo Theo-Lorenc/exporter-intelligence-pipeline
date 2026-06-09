@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # C extensions
 *.so
@@ -179,3 +180,16 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Data outputs
+*.xlsx
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# pipeline logs
+*.log
+exporters_final.db
+exporters_master.xlsx
