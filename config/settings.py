@@ -15,6 +15,10 @@ REQUEST_DELAY_SECONDS = 0.25
 REQUEST_TIMEOUT = 60
 MAX_WORKERS = 8
 
+BARE_DOMAIN_PATTERN = re.compile(
+    r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b"
+)
+
 BOILERPLATE_PATTERNS = [
     r"ListingDetails",
     r"Exporters Database",

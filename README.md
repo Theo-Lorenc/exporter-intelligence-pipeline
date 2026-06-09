@@ -36,7 +36,7 @@ This tool provides a quick way to:
 ![Company Profile Screenshot](screenshot_company_profile.png)
 
 ### 1. Excel Workbook
-`exporters_master.xlsx`
+`open data/exporters.xlsx`
 
 Key sheets:
 

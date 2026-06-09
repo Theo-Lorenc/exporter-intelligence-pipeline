@@ -7,6 +7,15 @@ import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from processing.text_utils import unique_nonblank
+from config.settings import BARE_DOMAIN_PATTERN
+
+SESSION = requests.Session()
+
+
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+})
+
 
 def safe_get(url, timeout=20, retries=2):
     if not url:
@@ -31,19 +40,14 @@ def safe_get(url, timeout=20, retries=2):
 
 
 def normalize_website_url(url):
-    url = clean_text(url).rstrip(".,);")
     if not url:
         return ""
-    if url.startswith("mailto:") or url.startswith("tel:"):
-        return ""
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
-    try:
-        parsed = urlparse(url)
-        if not parsed.netloc:
-            return ""
-    except Exception:
-        return ""
+
+    url = url.strip()
+
+    if not url.startswith("http"):
+        url = "http://" + url
+
     return url
 
 
@@ -82,31 +86,79 @@ def extract_emails_from_website(url):
     if not url:
         return []
 
-    emails = []
+    visited = set()
+    emails = set()
 
-    resp = safe_get(url)
-    if not resp:
-        return []
+    # ✅ Pages to try (high success rate)
+    keywords = [
+        "",
+        "contact",
+        "contact-us",
+        "about",
+        "about-us",
+        "team",
+        "company",
+        "sales",
+        "export",
+        "distributor"
+    ]
 
-    html_text = resp.text
-    emails.extend(EMAIL_PATTERN.findall(html_text))
+    base = url.rstrip("/")
 
-    soup = BeautifulSoup(html_text, "html.parser")
-    keywords = ["contact", "about", "team", "company"]
-    links = []
+    for keyword in keywords:
+        try:
+            page_url = base if keyword == "" else f"{base}/{keyword}"
 
-    for a in soup.select("a[href]"):
-        href = clean_text(a.get("href", ""))
-        text = clean_text(a.get_text(" ", strip=True)).lower()
-        if not href:
+            if page_url in visited:
+                continue
+
+            visited.add(page_url)
+
+            resp = safe_get(page_url)
+            if not resp:
+                continue
+
+            text = resp.text
+
+            # ✅ Extract emails
+            found = EMAIL_PATTERN.findall(text)
+
+            for email in found:
+                cleaned = email.lower().strip()
+
+                # ✅ Remove junk emails
+                if any(bad in cleaned for bad in [
+                    "example", "test", "placeholder",
+                    "noreply", "no-reply"
+                ]):
+                    continue
+
+                emails.add(cleaned)
+
+        except Exception:
             continue
-        href_lower = href.lower()
-        if any(k in href_lower for k in keywords) or any(k in text for k in keywords):
-            links.append(urljoin(url, href))
 
-    for link in unique_nonblank(links)[:3]:
-        resp2 = safe_get(link)
-        if resp2:
-            emails.extend(EMAIL_PATTERN.findall(resp2.text))
+    # ✅ Also search for mailto links
+    from bs4 import BeautifulSoup
 
-    return unique_nonblank(emails)
+    soup = BeautifulSoup(text, "html.parser")
+
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+
+        if "mailto:" in href:
+            email = href.replace("mailto:", "").strip()
+            emails.add(email.lower())    
+
+    return list(emails)
+
+def compute_outreach_ready(row):
+    has_email = bool(clean_text(row.get("emails")))
+    has_phone = bool(clean_text(row.get("phones")))
+
+    if has_email:
+        return "Yes"
+    elif has_phone:
+        return "Maybe"
+    else:
+        return "No"

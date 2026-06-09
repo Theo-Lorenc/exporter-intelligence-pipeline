@@ -1,3 +1,5 @@
+import pandas as pd
+
 from scraper.listings import collect_listings
 from scraper.profiles import enrich_rows
 from processing.text_utils import clean_text
@@ -7,13 +9,13 @@ from processing.brokerage_intelligence import assign_decision_category
 
 
 def clean_dataframe(df):
-    import pandas as pd
     for col in df.columns:
         if pd.api.types.is_object_dtype(df[col]):
             df[col] = df[col].fillna("").astype(str).map(clean_text)
     return df
 
 
+# ✅ FUNCTION 1 (OUTSIDE main)
 def compute_outreach_ready(row):
     has_email = bool(clean_text(row.get("emails")))
     has_website = bool(clean_text(row.get("website")))
@@ -21,6 +23,16 @@ def compute_outreach_ready(row):
     if has_email or has_website:
         return "Yes"
     return "No"
+
+
+# ✅ FUNCTION 2 (OUTSIDE main)
+def compute_contact_action(row):
+    if row["outreach_ready"] == "Yes":
+        return "Ready to contact"
+    elif row["outreach_ready"] == "Maybe":
+        return "Call or research email"
+    else:
+        return "Find contact details manually"
 
 
 def main():
@@ -34,45 +46,16 @@ def main():
     df = pd.DataFrame(enriched)
     df = clean_dataframe(df)
 
-    # ✅ Apply outreach readiness
+    # ✅ CORRECT ORDER
     df["outreach_ready"] = df.apply(compute_outreach_ready, axis=1)
-
-    # ✅ Apply decision categories
     df["decision_category"] = df.apply(assign_decision_category, axis=1)
+    df["contact_action"] = df.apply(compute_contact_action, axis=1)
 
-    # ✅ Contact tracking fields
     df["contact_status"] = "Not Contacted"
     df["last_contacted"] = ""
     df["response_received"] = "No"
     df["notes"] = ""
 
-    # ✅ -------------------------------
-    # Add outreach readiness logic
-    # ✅ -------------------------------
-    def compute_outreach_ready(row):
-        has_email = bool(clean_text(row.get("emails")))
-        has_website = bool(clean_text(row.get("website")))
-
-        if has_email or has_website:
-            return "Yes"
-        return "No"
-
-    df["outreach_ready"] = df.apply(compute_outreach_ready, axis=1)
-
-    # ✅ -------------------------------
-    # Add decision category
-    # ✅ -------------------------------
-    df["decision_category"] = df.apply(assign_decision_category, axis=1)
-
-    # ✅ -------------------------------
-    # Add contact tracking (CRM fields)
-    # ✅ -------------------------------
-    df["contact_status"] = "Not Contacted"
-    df["last_contacted"] = ""
-    df["response_received"] = "No"
-    df["notes"] = ""
-
-    # ✅ Convert to rows
     rows = df.to_dict(orient="records")
 
     build_database(rows)
