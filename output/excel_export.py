@@ -12,7 +12,15 @@ def export_master_excel():
 
     conn.close()
 
-    # ✅ Basic clean export
-    df.to_excel(EXCEL_FILE, index=False)
+    # ✅ Create Top Targets sheet
+    df_top = df[
+        (df["decision_category"] == "Contact Immediately") &
+        (df["outreach_ready"] == "Yes")
+    ]
+
+    # ✅ Write multiple sheets
+    with pd.ExcelWriter(EXCEL_FILE, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="All Exporters", index=False)
+        df_top.to_excel(writer, sheet_name="Top Targets", index=False)
 
     print(f"Excel exported: {EXCEL_FILE}")
