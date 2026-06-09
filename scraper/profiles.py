@@ -1,11 +1,11 @@
 from config.settings import *
-from processing.utils import clean_text, strip_boilerplate
+from processing.text_utils import clean_text, strip_boilerplate
 from scraper.website import *
 
 import json
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from processing.utils import clean_text, strip_boilerplate, unique_nonblank
+from processing.text_utils import clean_text, strip_boilerplate
 
 import re
 

@@ -1,12 +1,12 @@
 from config.settings import *
-from processing.utils import clean_text
+from processing.text_utils import clean_text
 import re
 import time
 import random
 import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-from processing.utils import unique_nonblank
+from processing.text_utils import unique_nonblank
 
 def safe_get(url, timeout=20, retries=2):
     if not url:

@@ -4,7 +4,7 @@ import html
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import requests
-from processing.utils import strip_boilerplate, clean_text
+from processing.text_utils import strip_boilerplate, clean_text
 
 SESSION = requests.Session()
 SESSION.headers.update({
