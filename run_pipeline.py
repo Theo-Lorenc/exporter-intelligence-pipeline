@@ -46,6 +46,34 @@ def main():
     df = pd.DataFrame(enriched)
     df = clean_dataframe(df)
 
+    def extract_product_flags(row):
+        text = (
+            clean_text(row.get("product_families", "")) + " " +
+            clean_text(row.get("product_variants", ""))
+        ).lower()
+
+        return pd.Series({
+            "has_beef": "Yes" if "beef" in text else "No",
+            "has_lamb": "Yes" if "lamb" in text else "No",
+            "has_goat": "Yes" if "goat" in text else "No"
+        })
+
+    # ✅ Apply it
+    product_flags = df.apply(extract_product_flags, axis=1)
+    df = pd.concat([df, product_flags], axis=1)
+
+    def primary_product(row):
+        if row["has_beef"] == "Yes":
+            return "Beef"
+        elif row["has_lamb"] == "Yes":
+            return "Lamb"
+        elif row["has_goat"] == "Yes":
+            return "Goat"
+        return "Unknown"
+
+    df["primary_product"] = df.apply(primary_product, axis=1)
+
+
     # ✅ CORRECT ORDER
     df["outreach_ready"] = df.apply(compute_outreach_ready, axis=1)
     df["decision_category"] = df.apply(assign_decision_category, axis=1)
