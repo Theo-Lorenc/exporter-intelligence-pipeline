@@ -14,7 +14,7 @@ def export_master_excel():
 
     # ✅ Create Top Targets sheet
     df_top = df[
-        (df["decision_category"] == "Contact Immediately") &
+        (df["supplier_quality_score"] >= 7) &
         (df["outreach_ready"] == "Yes")
     ]
 

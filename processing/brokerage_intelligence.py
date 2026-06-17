@@ -2,14 +2,14 @@ from processing.text_utils import clean_text
 
 
 def assign_decision_category(row):
-    score = row.get("brokerage_fit_score", 0)
-    outreach_ready = clean_text(row.get("outreach_ready", "")).lower()
+    quality = row.get("supplier_quality_score", 0)
+    outreach = row.get("outreach_ready", "")
 
-    if score >= 12 and outreach_ready == "yes":
+    if quality >= 7 and outreach == "Yes":
         return "Contact Immediately"
-    elif score >= 8:
+    elif quality >= 5:
         return "Investigate Further"
-    elif score >= 4:
+    elif quality >= 3:
         return "Low Priority"
     else:
         return "Reject"

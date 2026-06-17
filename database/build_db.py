@@ -32,10 +32,10 @@ def build_database(rows):
             contact_status TEXT,
             last_contacted TEXT,
             response_received TEXT,
-            notes TEXT
+            notes TEXT,
+            supplier_quality_score INTEGER
         )
     """)
-
 
     # ✅ Clear old data
     cur.execute("DELETE FROM exporters")
@@ -43,32 +43,34 @@ def build_database(rows):
     # ✅ Insert new data
     for _, row in df.iterrows():
         cur.execute("""
-        INSERT INTO exporters (
-            company_name, description, website, emails, phones,
-            countries_served, certifications, accreditations,
-            product_families, product_variants,
-            outreach_ready, decision_category, contact_action,
-            contact_status, last_contacted, response_received, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        row.get("company_name", ""),
-        row.get("description", ""),
-        row.get("website", ""),
-        row.get("emails", ""),
-        row.get("phones", ""),
-        row.get("countries_served", ""),
-        row.get("certifications", ""),
-        row.get("accreditations", ""),
-        row.get("product_families", ""),
-        row.get("product_variants", ""),
-        row.get("outreach_ready", ""),
-        row.get("decision_category", ""),
-        row.get("contact_action", ""),
-        row.get("contact_status", ""),
-        row.get("last_contacted", ""),
-        row.get("response_received", ""),
-        row.get("notes", "")
-    ))
+            INSERT INTO exporters (
+                company_name, description, website, emails, phones,
+                countries_served, certifications, accreditations,
+                product_families, product_variants,
+                outreach_ready, decision_category, contact_action,
+                contact_status, last_contacted, response_received, notes,
+                supplier_quality_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row.get("company_name", ""),
+            row.get("description", ""),
+            row.get("website", ""),
+            row.get("emails", ""),
+            row.get("phones", ""),
+            row.get("countries_served", ""),
+            row.get("certifications", ""),
+            row.get("accreditations", ""),
+            row.get("product_families", ""),
+            row.get("product_variants", ""),
+            row.get("outreach_ready", ""),
+            row.get("decision_category", ""),
+            row.get("contact_action", ""),
+            row.get("contact_status", ""),
+            row.get("last_contacted", ""),
+            row.get("response_received", ""),
+            row.get("notes", ""),
+            row.get("supplier_quality_score", 0)
+        ))
 
     conn.commit()
     conn.close()

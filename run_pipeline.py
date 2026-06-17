@@ -34,6 +34,43 @@ def compute_contact_action(row):
     else:
         return "Find contact details manually"
 
+def compute_supplier_quality(row):
+    score = 0
+
+    # ✅ Has website
+    if row.get("website"):
+        score += 2
+
+    # ✅ Has email (very important)
+    if row.get("emails"):
+        score += 4
+
+    # ✅ Has phone
+    if row.get("phones"):
+        score += 1
+
+    # ✅ Has product information
+    if row.get("product_variants"):
+        score += 2
+
+    # ✅ Has certifications (strong trust signal)
+    if row.get("certifications"):
+        score += 3
+
+    return score
+
+def compute_target_priority(row):
+    # Focus on lamb example
+    if row.get("has_lamb") == "Yes":
+        if row["supplier_quality_score"] >= 7:
+            return "High Priority Lamb Supplier"
+        elif row["supplier_quality_score"] >= 4:
+            return "Medium Priority Lamb Supplier"
+        else:
+            return "Low Priority Lamb Supplier"
+
+    return "Not Target Product"
+
 
 def main():
     print("Collecting listings...")
@@ -83,6 +120,8 @@ def main():
     df["last_contacted"] = ""
     df["response_received"] = "No"
     df["notes"] = ""
+    df["supplier_quality_score"] = df.apply(compute_supplier_quality, axis=1)
+    df["target_priority"] = df.apply(compute_target_priority, axis=1)
 
     rows = df.to_dict(orient="records")
 
