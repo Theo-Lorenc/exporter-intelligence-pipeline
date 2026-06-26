@@ -1,11 +1,13 @@
 import pandas as pd
 
+from scraper import buyers
 from scraper.listings import collect_listings
 from scraper.profiles import enrich_rows
 from processing.text_utils import clean_text
 from database.build_db import build_database
 from output.excel_export import export_master_excel
 from processing.brokerage_intelligence import assign_decision_category
+from scraper.buyers import collect_buyers
 
 
 def clean_dataframe(df):
@@ -110,6 +112,28 @@ def main():
 
     df["primary_product"] = df.apply(primary_product, axis=1)
 
+    print("Collecting buyers...")
+    buyers = collect_buyers()
+    print(f"Found {len(buyers)} buyers")
+
+    buyers_df = pd.DataFrame(buyers)
+
+    def match_suppliers_to_buyers(suppliers_df, buyers_df):
+        matches = []
+
+        for _, supplier in suppliers_df.iterrows():
+            for _, buyer in buyers_df.iterrows():
+                if supplier.get("has_beef") == "Yes":
+                    matches.append({
+                        "supplier": supplier.get("company_name"),
+                        "supplier_website": supplier.get("website"),
+                        "buyer": buyer.get("buyer_name"),
+                        "buyer_website": buyer.get("buyer_website")
+                    })
+
+        return pd.DataFrame(matches)
+
+    matches_df = match_suppliers_to_buyers(df, buyers_df)
 
     # ✅ CORRECT ORDER
     df["outreach_ready"] = df.apply(compute_outreach_ready, axis=1)
@@ -126,7 +150,7 @@ def main():
     rows = df.to_dict(orient="records")
 
     build_database(rows)
-    export_master_excel()
+    export_master_excel(df, matches_df)
 
     print("Pipeline complete ✅")
 

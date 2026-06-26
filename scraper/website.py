@@ -16,6 +16,8 @@ SESSION.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 })
 
+visited_websites = {}
+
 
 def safe_get(url, timeout=20, retries=2):
     if not url:
@@ -34,7 +36,6 @@ def safe_get(url, timeout=20, retries=2):
                 return None
         except Exception:
             pass
-        time.sleep(random.uniform(1, 2))
 
     return None
 
@@ -83,6 +84,12 @@ def extract_website_from_details(details, page_text=""):
 
 
 def extract_emails_from_website(url):
+    if url in visited_websites:
+        return visited_websites[url]
+
+    # after processing:
+    visited_websites[url] = emails
+    
     if not url:
         return []
 

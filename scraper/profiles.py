@@ -6,7 +6,7 @@ import json
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from processing.text_utils import clean_text, strip_boilerplate
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 
 def parse_profile_page(html_text):
@@ -120,24 +120,19 @@ def enrich_one_row(row):
     return merged
 
 
-def enrich_rows(rows):
+def enrich_rows(rows, max_workers=20):
     enriched = []
-    total = len(rows)
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(enrich_one_row, row) for row in rows]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(enrich_one_row, row): row
+            for row in rows
+        }
 
-        completed = 0
-        for future in as_completed(futures):
-            completed += 1
-            print(f"Profile {completed}/{total}")
-            enriched.append(future.result())
+        for i, future in enumerate(as_completed(futures)):
+            result = future.result()
+            enriched.append(result)
 
-    enriched = sorted(
-        enriched,
-        key=lambda r: (
-            clean_text(r.get("company_name", "")),
-            clean_text(r.get("profile_url", "")),
-        ),
-    )
+            print(f"Profile {i+1}/{len(rows)}")
+
     return enriched
