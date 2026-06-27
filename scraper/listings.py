@@ -1,23 +1,35 @@
 from config.settings import *
 import time
 import html
+import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-import requests
-from processing.text_utils import strip_boilerplate, clean_text
+
+from processing.text_utils import strip_boilerplate
+
 
 SESSION = requests.Session()
 SESSION.headers.update({
-    "user-agent": HEADERS["user-agent"],
+    "User-Agent": HEADERS.get("user-agent", "Mozilla/5.0"),
     "accept-language": "en-GB,en;q=0.9",
 })
 
+
+# ✅ fetch one page of listings
 def fetch_list_page(page_number):
     payload = dict(SEARCH_PAYLOAD)
     payload["PageNumber"] = page_number
 
-    response = SESSION.post(LIST_URL, headers=HEADERS, json=payload, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
+    try:
+        response = SESSION.post(
+            LIST_URL,
+            headers=HEADERS,
+            json=payload,
+            timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+    except Exception:
+        return ""
 
     try:
         data = response.json()
@@ -34,6 +46,7 @@ def fetch_list_page(page_number):
     return html.unescape(html_snippet)
 
 
+# ✅ parse listing HTML into structured rows
 def parse_listing_html(html_snippet):
     soup = BeautifulSoup(html_snippet, "html.parser")
     rows = []
@@ -43,27 +56,49 @@ def parse_listing_html(html_snippet):
         desc_tag = c.select_one("div.company_list_body p")
         img_tag = c.select_one("img")
 
+        company_name = header_link.get_text(strip=True) if header_link else ""
+        description = strip_boilerplate(
+            desc_tag.get_text(" ", strip=True) if desc_tag else ""
+        )
+
+        profile_url = (
+            urljoin(BASE_URL, header_link["href"])
+            if header_link and header_link.has_attr("href")
+            else ""
+        )
+
+        image_url = (
+            urljoin(BASE_URL, img_tag["src"])
+            if img_tag and img_tag.has_attr("src")
+            else ""
+        )
+
         rows.append({
-            "company_name": header_link.get_text(strip=True) if header_link else "",
-            "description": strip_boilerplate(desc_tag.get_text(" ", strip=True) if desc_tag else ""),
-            "profile_url": urljoin(BASE_URL, header_link["href"]) if header_link and header_link.has_attr("href") else "",
-            "image_url": urljoin(BASE_URL, img_tag["src"]) if img_tag and img_tag.has_attr("src") else "",
+            "company_name": company_name,
+            "description": description,
+            "profile_url": profile_url,
+            "image_url": image_url,
         })
 
     return rows
 
 
+# ✅ collect all listings across pages
 def collect_listings(max_pages=MAX_PAGES):
     all_rows = []
 
     for page in range(1, max_pages + 1):
-        rows = parse_listing_html(fetch_list_page(page))
+        html_snippet = fetch_list_page(page)
+        rows = parse_listing_html(html_snippet)
+
         print(f"Page {page}: {len(rows)}")
 
         if not rows:
             break
 
         all_rows.extend(rows)
+
+        # ✅ small delay to avoid blocking
         time.sleep(REQUEST_DELAY_SECONDS)
 
     return all_rows

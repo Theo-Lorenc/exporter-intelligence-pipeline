@@ -2,14 +2,26 @@ from processing.text_utils import clean_text
 
 
 def assign_decision_category(row):
-    quality = row.get("supplier_quality_score", 0)
-    outreach = row.get("outreach_ready", "")
+    quality = int(row.get("supplier_quality_score", 0))
+    outreach = clean_text(row.get("outreach_ready", ""))
+    website = clean_text(row.get("website", ""))
+    emails = clean_text(row.get("emails", ""))
 
-    if quality >= 7 and outreach == "Yes":
+    # ✅ Strong signal → ready AND real contact channel
+    if quality >= 8 and outreach == "Yes" and website:
         return "Contact Immediately"
-    elif quality >= 5:
+
+    # ✅ Good but not perfect
+    if quality >= 6 and outreach == "Yes":
+        return "High Potential"
+
+    # ✅ Needs more research
+    if quality >= 4:
         return "Investigate Further"
-    elif quality >= 3:
+
+    # ✅ Low signal
+    if quality >= 2:
         return "Low Priority"
-    else:
-        return "Reject"
+
+    # ✅ not useful
+    return "Reject"

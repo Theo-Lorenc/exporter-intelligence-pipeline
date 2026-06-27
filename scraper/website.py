@@ -1,38 +1,39 @@
-from config.settings import *
-from processing.text_utils import clean_text
 import re
-import time
-import random
 import requests
-from urllib.parse import urljoin, urlparse
-from bs4 import BeautifulSoup
-from processing.text_utils import unique_nonblank
-from config.settings import BARE_DOMAIN_PATTERN
+from urllib.parse import urljoin
+
+from config.settings import BOILERPLATE_PATTERNS
+from processing.text_utils import clean_text, unique_nonblank
+
+
+# ✅ patterns
+EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 SESSION = requests.Session()
-
-
 SESSION.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 })
 
+# ✅ caching
 visited_websites = {}
 
 
-def safe_get(url, timeout=20, retries=2):
+# ✅ safe request handler
+def safe_get(url, timeout=5, retries=2):
     if not url:
         return None
 
     url = clean_text(url).rstrip(".,);")
-    if not url.startswith(("http://", "https://")):
+
+    if not url.startswith("http"):
         url = "https://" + url
 
     for _ in range(retries + 1):
         try:
-            response = SESSION.get(url, timeout=timeout, allow_redirects=True)
-            if response.status_code == 200:
-                return response
-            if response.status_code in {403, 404}:
+            resp = SESSION.get(url, timeout=timeout)
+            if resp.status_code == 200:
+                return resp
+            elif resp.status_code in [403, 404]:
                 return None
         except Exception:
             pass
@@ -40,132 +41,84 @@ def safe_get(url, timeout=20, retries=2):
     return None
 
 
+# ✅ normalise URLs
 def normalize_website_url(url):
+    url = clean_text(url)
+
     if not url:
         return ""
 
-    url = url.strip()
-
     if not url.startswith("http"):
-        url = "http://" + url
+        url = "https://" + url
 
     return url
 
 
-def extract_website_from_details(details, page_text=""):
-    # 1) explicit website-like fields
-    for k, v in details.items():
-        key = clean_text(k).lower()
-        val = clean_text(v)
-        if val and ("website" in key or key == "web"):
-            normalized = normalize_website_url(val)
-            if normalized:
-                return normalized
+# ✅ extract website from raw text
+def extract_website_from_text(text):
+    matches = re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text or "", re.IGNORECASE)
 
-    # 2) explicit URLs in page text
-    match = re.search(r"(https?://\S+|www\.\S+)", page_text, flags=re.IGNORECASE)
-    if match:
-        normalized = normalize_website_url(match.group(1))
-        if normalized:
-            return normalized
-
-    # 3) bare-domain fallback
-    match = BARE_DOMAIN_PATTERN.search(page_text)
-    if match:
-        candidate = match.group(0)
-        if "@" not in candidate and not candidate.lower().endswith(
-            (".jpg", ".jpeg", ".png", ".gif", ".pdf", ".svg", ".webp")
-        ):
-            normalized = normalize_website_url(candidate)
-            if normalized:
-                return normalized
+    for match in matches:
+        if "mla.com.au" not in match.lower():  # ✅ avoid directory links
+            return normalize_website_url(match)
 
     return ""
 
 
+# ✅ extract emails from company website
 def extract_emails_from_website(url):
-    if url in visited_websites:
-        return visited_websites[url]
-
-    # after processing:
-    visited_websites[url] = emails
-    
     if not url:
         return []
 
-    visited = set()
-    emails = set()
+    if url in visited_websites:
+        return visited_websites[url]
 
-    # ✅ Pages to try (high success rate)
-    keywords = [
-        "",
-        "contact",
-        "contact-us",
-        "about",
-        "about-us",
-        "team",
-        "company",
-        "sales",
-        "export",
-        "distributor"
-    ]
+    emails = []
 
-    base = url.rstrip("/")
+    response = safe_get(url)
 
-    for keyword in keywords:
-        try:
-            page_url = base if keyword == "" else f"{base}/{keyword}"
+    if not response:
+        visited_websites[url] = emails
+        return emails
 
-            if page_url in visited:
-                continue
+    text = response.text
 
-            visited.add(page_url)
+    raw_emails = EMAIL_PATTERN.findall(text)
 
-            resp = safe_get(page_url)
-            if not resp:
-                continue
+    for email in raw_emails:
+        cleaned = email.lower().strip()
 
-            text = resp.text
-
-            # ✅ Extract emails
-            found = EMAIL_PATTERN.findall(text)
-
-            for email in found:
-                cleaned = email.lower().strip()
-
-                # ✅ Remove junk emails
-                if any(bad in cleaned for bad in [
-                    "example", "test", "placeholder",
-                    "noreply", "no-reply"
-                ]):
-                    continue
-
-                emails.add(cleaned)
-
-        except Exception:
+        # ✅ skip MLA / directories / junk
+        if any(bad in cleaned for bad in [
+            "mla.com.au",
+            "wixpress",
+            "sentry",
+            "example",
+            "domain.com",
+            ".jpg",
+            ".png"
+        ]):
             continue
 
-    # ✅ Also search for mailto links
-    from bs4 import BeautifulSoup
+        emails.append(cleaned)
 
-    soup = BeautifulSoup(text, "html.parser")
+    emails = unique_nonblank(emails)
 
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
+    visited_websites[url] = emails
+    return emails
 
-        if "mailto:" in href:
-            email = href.replace("mailto:", "").strip()
-            emails.add(email.lower())    
 
-    return list(emails)
-
+# ✅ outreach readiness
 def compute_outreach_ready(row):
-    has_email = bool(clean_text(row.get("emails")))
-    has_phone = bool(clean_text(row.get("phones")))
+    emails = clean_text(row.get("emails"))
+    phones = clean_text(row.get("phones"))
 
-    if has_email:
+    # ✅ only real emails count
+    if emails and "@" in emails:
         return "Yes"
-    elif has_phone:
+
+    # ✅ only reasonable phones
+    if phones and len(re.sub(r"\D", "", phones)) >= 8:
         return "Maybe"
-    else:
-        return "No"
+
+    return "No"

@@ -9,33 +9,29 @@ HEADERS = {
 
 
 def collect_buyers():
-    print("Searching for meat importers...")
+    print("Loading known importers...")
 
-    # ✅ You can expand this list later
-    search_terms = [
-        "beef importer singapore",
-        "meat distributor singapore",
-        "food import company singapore"
+    buyers = [
+        {
+            "buyer_name": "Bidfood Singapore",
+            "buyer_website": "https://www.bidfood.com.sg"
+        },
+        {
+            "buyer_name": "Angliss Singapore",
+            "buyer_website": "https://www.angliss.com.sg"
+        },
+        {
+            "buyer_name": "Indoguna Singapore",
+            "buyer_website": "https://www.indoguna.com"
+        },
+        {
+            "buyer_name": "Classic Fine Foods Singapore",
+            "buyer_website": "https://www.classicfinefoods.com"
+        },
+        {
+            "buyer_name": "FoodXervices Inc",
+            "buyer_website": "https://www.foodxervices.com"
+        }
     ]
-
-    buyers = []
-
-    for term in search_terms:
-        print(f"Searching: {term}")
-
-        url = f"https://duckduckgo.com/html/?q={term.replace(' ', '+')}"
-        resp = requests.get(url, headers=HEADERS)
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        for result in soup.select(".result__a"):
-            name = clean_text(result.get_text())
-            link = result.get("href")
-
-            if link and name:
-                buyers.append({
-                    "buyer_name": name,
-                    "buyer_website": link
-                })
 
     return buyers

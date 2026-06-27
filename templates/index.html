@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Exporter Intelligence</title>
+</head>
+<body>
+
+    <h1>Exporter Intelligence Dashboard</h1>
+
+    <p>Use the buttons below:</p>
+
+    <button onclick="refreshData()">Refresh Data</button>
+
+    <br><br>
+
+    <a href="/download-excel">
+        <button>Download Excel</button>
+    </a>
+
+    <br><br>
+
+    <button onclick="loadSuppliers()">View Suppliers</button>
+
+    <pre id="output"></pre>
+
+    <script>
+        async function loadSuppliers() {
+            const res = await fetch('/suppliers');
+            const data = await res.json();
+            document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function refreshData() {
+            await fetch('/refresh');
+            alert("Pipeline updated ✅");
+        }
+    </script>
+
+</body>
+</html>
